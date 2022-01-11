@@ -2,8 +2,6 @@ import express from "express";
 import "reflect-metadata";
 import { ApolloServer } from "apollo-server-express";
 import { buildSchema } from "type-graphql";
-import { AuthResolver } from "./resolvers/auth.resolver";
-
 import { BookResolver } from "./resolvers/book.resolver";
 import { AuthorResolver } from "./resolvers/author.resolver";
 
@@ -12,7 +10,7 @@ export async function startServer() {
 
   const apolloServer = new ApolloServer({
     schema: await buildSchema({
-      resolvers: [BookResolver, AuthorResolver, AuthResolver],
+      resolvers: [BookResolver, AuthorResolver, AuthorResolver],
     }),
     context: ({ req, res }) => ({ req, res }),
   });

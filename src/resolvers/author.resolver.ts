@@ -1,19 +1,19 @@
 import { Mutation, Resolver, Arg, InputType, Field, Query } from "type-graphql";
-import { getRepository, Repository } from "typeorm";
 import { Author } from "../entity/author.entity";
-import { Length } from "class-validator";
+import { getRepository, Repository } from "typeorm";
+import { Length, IsString } from "class-validator";
 
 @InputType()
 class AuthorInput {
   @Field()
   @Length(3, 64)
+  @IsString()
   fullName!: string;
 }
 
 @InputType()
 class AuthorUpdateInput {
   @Field(() => Number)
-  @Length(3, 64)
   id!: number;
 
   @Field()
@@ -61,10 +61,12 @@ export class AuthorResolver {
     @Arg("input", () => AuthorIdInput) input: AuthorIdInput
   ): Promise<Author | undefined> {
     try {
-      const author = await this.authorRepository.findOne(input.id);
+      const author = await this.authorRepository.findOne(input.id, {
+        relations: ["books"],
+      });
       if (!author) {
         const error = new Error();
-        error.message = "Author does nor exist";
+        error.message = "Author does not exist";
         throw error;
       }
       return author;
@@ -77,25 +79,31 @@ export class AuthorResolver {
   async updateOneAuthor(
     @Arg("input", () => AuthorUpdateInput) input: AuthorUpdateInput
   ): Promise<Author | undefined> {
-    const authorExist = await this.authorRepository.findOne(input.id);
+    const authorExists = await this.authorRepository.findOne(input.id);
 
-    if (!authorExist) {
-      throw new Error("Author does not exist");
+    if (!authorExists) {
+      throw new Error("Auhtor does not exists");
     }
 
-    const updateAuthor = await this.authorRepository.save({
+    const updatedAuthor = await this.authorRepository.save({
       id: input.id,
       fullName: input.fullName,
     });
 
-    return await this.authorRepository.findOne(updateAuthor.id);
+    return await this.authorRepository.findOne(updatedAuthor.id);
   }
 
   @Mutation(() => Boolean)
   async deleteOneAuthor(
     @Arg("input", () => AuthorIdInput) input: AuthorIdInput
   ): Promise<Boolean> {
-    await this.authorRepository.delete(input.id);
-    return true;
+    try {
+      const author = await this.authorRepository.findOne(input.id);
+      if (!author) throw new Error("Author does not exist");
+      await this.authorRepository.delete(input.id);
+      return true;
+    } catch (e) {
+      throw new Error(e.message);
+    }
   }
 }

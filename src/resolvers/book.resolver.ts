@@ -1,8 +1,18 @@
-import { Mutation, Resolver, Arg, InputType, Field, Query } from "type-graphql";
+import {
+  Mutation,
+  Resolver,
+  Arg,
+  InputType,
+  Field,
+  Query,
+  UseMiddleware,
+  Ctx,
+} from "type-graphql";
 import { getRepository, Repository } from "typeorm";
 import { Author } from "../entity/author.entity";
 import { Book } from "../entity/book.entity";
 import { Length } from "class-validator";
+import { IContext, isAuth } from "../middlewares/auth.middleware";
 
 @InputType()
 class BookInput {
@@ -25,8 +35,9 @@ class BookUpdateInput {
 }
 
 @InputType()
-class BookUpdateParseInput {
+class BookUpdateParsedInput {
   @Field(() => String, { nullable: true })
+  @Length(3, 64)
   title?: string;
 
   @Field(() => Author, { nullable: true })
@@ -50,8 +61,13 @@ export class BookResolver {
   }
 
   @Mutation(() => Book)
-  async createBook(@Arg("input", () => BookInput) input: BookInput) {
+  @UseMiddleware(isAuth)
+  async createBook(
+    @Arg("input", () => BookInput) input: BookInput,
+    @Ctx() context: IContext
+  ) {
     try {
+      console.log(context.payload);
       const author: Author | undefined = await this.authorRepository.findOne(
         input.author
       );
@@ -59,7 +75,7 @@ export class BookResolver {
       if (!author) {
         const error = new Error();
         error.message =
-          "The author for this book does not exist, plase double check";
+          "The author for this book does not exist, please double check";
         throw error;
       }
 
@@ -69,7 +85,7 @@ export class BookResolver {
       });
 
       return await this.bookRepository.findOne(book.identifiers[0].id, {
-        relations: ["author"],
+        relations: ["author", "author.books"],
       });
     } catch (e) {
       throw new Error(e.message);
@@ -77,11 +93,14 @@ export class BookResolver {
   }
 
   @Query(() => [Book])
-  async getAllBook(): Promise<Book[]> {
+  @UseMiddleware(isAuth)
+  async getAllBooks(): Promise<Book[]> {
     try {
-      return await this.bookRepository.find({ relations: ["author"] });
+      return await this.bookRepository.find({
+        relations: ["author", "author.books"],
+      });
     } catch (e) {
-      throw new Error();
+      throw new Error(e);
     }
   }
 
@@ -91,11 +110,12 @@ export class BookResolver {
   ): Promise<Book | undefined> {
     try {
       const book = await this.bookRepository.findOne(input.id, {
-        relations: ["author"],
+        relations: ["author", "author.books"],
       });
       if (!book) {
         const error = new Error();
-        error.message = "Book not fund";
+        error.message = "Book not found";
+        throw error;
       }
       return book;
     } catch (e) {
@@ -109,7 +129,7 @@ export class BookResolver {
     @Arg("input", () => BookUpdateInput) input: BookUpdateInput
   ): Promise<Boolean> {
     try {
-      await this.bookRepository.update(bookId, await this.parseInput(input));
+      await this.bookRepository.update(bookId.id, await this.parseInput(input));
       return true;
     } catch (e) {
       throw new Error(e);
@@ -121,7 +141,10 @@ export class BookResolver {
     @Arg("bookId", () => BookIdInput) bookId: BookIdInput
   ): Promise<Boolean> {
     try {
-      await this.bookRepository.delete(bookId.id);
+      const result = await this.bookRepository.delete(bookId.id);
+
+      if (result.affected === 0) throw new Error("Book does not exist");
+
       return true;
     } catch (e) {
       throw new Error(e);
@@ -130,7 +153,7 @@ export class BookResolver {
 
   private async parseInput(input: BookUpdateInput) {
     try {
-      const _input: BookUpdateParseInput = {};
+      const _input: BookUpdateParsedInput = {};
 
       if (input.title) {
         _input["title"] = input.title;
